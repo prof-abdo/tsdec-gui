@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>tsdec</title>
+<link rel="stylesheet" href="/web/app.css">
+</head>
+<body>
+<header class="bar">
+  <div class="brand">
+    <span class="logo">tsdec</span>
+    <span class="sub">offline transport stream decrypter</span>
+  </div>
+  <button id="theme" class="ghost" title="Toggle theme" aria-label="Toggle theme">◐</button>
+</header>
+
+<main>
+  <section class="card" id="setup">
+    <h2>Recording</h2>
+
+    <label class="field">
+      <span class="lbl">Transport stream <em>.ts</em></span>
+      <div class="row">
+        <input id="input" type="text" placeholder="path/to/recording.ts" spellcheck="false">
+        <button class="pick" data-target="input" data-ext="ts">Browse…</button>
+      </div>
+      <span class="hint" id="input-hint"></span>
+    </label>
+
+    <label class="field">
+      <span class="lbl">Control word log <em>.cwl</em></span>
+      <div class="row">
+        <input id="cwl" type="text" placeholder="path/to/control-words.cwl" spellcheck="false">
+        <button class="pick" data-target="cwl" data-ext="cwl">Browse…</button>
+      </div>
+    </label>
+
+    <label class="field">
+      <span class="lbl">Output</span>
+      <div class="row">
+        <input id="output" type="text" placeholder="leave empty for <name>_decrypted.ts" spellcheck="false">
+        <button class="pick" data-target="output" data-ext="ts">Browse…</button>
+      </div>
+    </label>
+
+    <div class="grid3">
+      <label class="field">
+        <span class="lbl">Threads</span>
+        <input id="threads" type="number" min="0" step="1" placeholder="auto">
+      </label>
+      <label class="field">
+        <span class="lbl">Parity blocker</span>
+        <input id="blocker" type="number" min="0" step="1" value="300">
+      </label>
+      <label class="field">
+        <span class="lbl">Only PIDs <em>optional</em></span>
+        <input id="pids" type="text" placeholder="0x100,0x101" spellcheck="false">
+      </label>
+    </div>
+
+    <label class="check">
+      <input id="resync" type="checkbox">
+      <span>Resync past corrupt packets</span>
+    </label>
+
+    <div class="actions">
+      <button id="start" class="primary">Decrypt</button>
+      <button id="stop" class="danger" hidden>Stop</button>
+      <button id="analyze" class="ghost">Survey PIDs</button>
+    </div>
+
+    <p id="problems" class="problems" hidden></p>
+  </section>
+
+  <section class="card" id="progress-card" hidden>
+    <h2 id="progress-title">Progress</h2>
+    <div class="bar-track"><div id="fill" class="bar-fill"></div></div>
+    <div class="stats">
+      <div><b id="pct">0%</b><span id="pct-label">done</span></div>
+      <div><b id="rate">—</b><span>throughput</span></div>
+      <div><b id="eta">—</b><span>remaining</span></div>
+      <div><b id="synced">—</b><span>syncs</span></div>
+    </div>
+    <p id="verdict" class="verdict" hidden></p>
+  </section>
+
+  <section class="card" id="pids-card" hidden>
+    <h2>PIDs found</h2>
+    <table class="pids">
+      <thead><tr><th>PID</th><th>Packets</th><th>Scrambled</th><th>Share</th><th>CC errors</th><th></th></tr></thead>
+      <tbody id="pid-rows"></tbody>
+    </table>
+    <p class="hint">Pick a scrambled PID to limit the decryption to it.</p>
+  </section>
+
+  <section class="card" id="log-card">
+    <h2>Log <button id="clear" class="ghost small">Clear</button></h2>
+    <pre id="log" class="log"></pre>
+  </section>
+</main>
+
+<div id="picker" class="modal" hidden>
+  <div class="modal-box">
+    <div class="modal-head">
+      <span id="picker-title">Choose a file</span>
+      <button id="picker-close" class="ghost" aria-label="Close">×</button>
+    </div>
+    <div id="picker-path" class="picker-path"></div>
+    <div id="picker-list" class="picker-list"></div>
+  </div>
+</div>
+
+<script src="/web/app.js"></script>
+</body>
+</html>
