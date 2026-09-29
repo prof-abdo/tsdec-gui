@@ -46,6 +46,7 @@ jobs:
       - name: Test
         env:
           TSDEC_BIN: ${{ github.workspace }}/tsdec
+          TSDEC_SRC: ${{ github.workspace }}/_decoder
         run: python test_gui.py
 
       - name: Package

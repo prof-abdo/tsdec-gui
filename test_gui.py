@@ -23,10 +23,38 @@ import tsdec_gui  # noqa: E402
 PORT = 8766
 BASE = "http://127.0.0.1:%d" % PORT
 
-TSDEC = os.environ.get("TSDEC_BIN") or os.path.join(HERE, "..", "tsdec", "tsdec.exe")
-if not os.path.isfile(TSDEC):
-    TSDEC = os.path.join(HERE, "..", "tsdec", "tsdec")
-TSDEC = os.path.normpath(TSDEC)
+
+def find_decoder():
+    """The decoder, and the checkout it came from so the sample can be built.
+
+    The tools that generate a test recording live in the decoder repository, so
+    wherever the binary came from is also where they are looked for. Without
+    the source tree the suite cannot build its own input and has nothing to
+    test against, so say so rather than failing later in a confusing way.
+    """
+    env_bin = os.environ.get("TSDEC_BIN")
+    env_src = os.environ.get("TSDEC_SRC")
+
+    candidates = [
+        (env_bin, env_src),
+        (os.path.join(HERE, "..", "tsdec", "tsdec.exe"), os.path.join(HERE, "..", "tsdec")),
+        (os.path.join(HERE, "..", "tsdec", "tsdec"), os.path.join(HERE, "..", "tsdec")),
+        (os.path.join(HERE, "..", "_decoder", "tsdec"), os.path.join(HERE, "..", "_decoder")),
+    ]
+
+    for binary, source in candidates:
+        if binary and os.path.isfile(binary) and \
+                os.path.isfile(os.path.join(source, "tools", "mk_ts.py")):
+            return os.path.normpath(binary), os.path.normpath(source)
+
+    for binary, source in candidates:
+        if binary and os.path.isfile(binary):
+            return os.path.normpath(binary), source
+
+    return None, None
+
+
+TSDEC, TSDEC_SRC = find_decoder()
 
 WORK = os.environ.get("GUI_WORK") or os.path.join(HERE, "testdata")
 
@@ -65,7 +93,11 @@ def build_sample():
     if os.path.isfile(enc) and os.path.isfile(cwl):
         return plain, enc, cwl
 
-    tools = os.path.join(HERE, "..", "tsdec", "tools")
+    tools = os.path.join(TSDEC_SRC, "tools")
+    if not os.path.isdir(tools):
+        print("SKIP: no decoder source at %s, cannot build a sample.\n"
+              "      Set TSDEC_SRC to the tsdec checkout." % TSDEC_SRC)
+        return None
     subprocess.run([sys.executable, os.path.join(tools, "mk_ts.py"),
                     "-o", plain, "-n", "30000"], check=True,
                    stdout=subprocess.DEVNULL)
@@ -76,11 +108,15 @@ def build_sample():
 
 
 def main():
-    if not os.path.isfile(TSDEC):
-        print("SKIP: tsdec not found at %s" % TSDEC)
+    if not TSDEC:
+        print("SKIP: tsdec not found. Set TSDEC_BIN, or clone tsdec next to "
+              "this checkout.")
         return 0
 
-    plain, enc, cwl = build_sample()
+    built = build_sample()
+    if built is None:
+        return 0
+    plain, enc, cwl = built
     print("sample: %s (%d bytes)" % (os.path.basename(enc), os.path.getsize(enc)))
 
     handler = tsdec_gui.Handler
@@ -179,8 +215,8 @@ def main():
            all(0 <= l.get("done", 0) <= l.get("total", 0) for l in progress))
 
         # ---- the output is actually the plaintext ----
-        tools = os.path.join(HERE, "..", "tsdec", "tools")
-        r = subprocess.run([sys.executable, os.path.join(tools, "verify.py"),
+        r = subprocess.run([sys.executable,
+                            os.path.join(TSDEC_SRC, "tools", "verify.py"),
                             plain, out], capture_output=True, text=True)
         ok("output matches the plaintext", r.stdout.startswith("PASS"),
            r.stdout.strip().splitlines()[:1])
@@ -199,7 +235,8 @@ def main():
             with open(bigplain, "wb") as f:
                 for r_ in range(12):
                     f.write(src)
-            subprocess.run([sys.executable, os.path.join(tools, "mk_test_pair.py"),
+            subprocess.run([sys.executable,
+                            os.path.join(TSDEC_SRC, "tools", "mk_test_pair.py"),
                             "-i", bigplain, "-o", big, "-c", bigcwl,
                             "-t", TSDEC, "-w", "20000", "--quiet"], check=True)
 
