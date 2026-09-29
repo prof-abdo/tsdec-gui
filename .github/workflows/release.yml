@@ -1,0 +1,68 @@
+name: release
+
+# Package the front end on a v* tag.
+#
+# There is nothing to compile here: this is Python and three static files, so
+# the release asset is the source tree as a zip, and the only thing to get
+# wrong is picking up the wrong files. Everything the app does not need at
+# runtime is left out, and the test suite is run first so a release can never
+# ship something the tests did not pass.
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: existing tag to build a release for
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check out the requested tag
+        if: github.event_name == 'workflow_dispatch'
+        run: git fetch --tags && git checkout "${{ inputs.tag }}"
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+
+      # the decoder is the dependency, so it is downloaded and the suite runs
+      # against that exact build rather than whatever happens to be installed
+      - name: Fetch the decoder
+        run: |
+          git clone --depth 1 https://github.com/prof-abdo/tsdec.git _decoder
+          make -C _decoder
+          cp _decoder/tsdec .
+
+      - name: Test
+        env:
+          TSDEC_BIN: ${{ github.workspace }}/tsdec
+        run: python test_gui.py
+
+      - name: Package
+        run: |
+          set -eu
+          staging="tsdec-gui"
+          mkdir -p "$staging"
+          cp tsdec_gui.py README.md CHANGELOG.md LICENSE "$staging/"
+          cp -r web "$staging/"
+          zip -r "$staging.zip" "$staging"
+          rm -rf "$staging"
+          ls -l "$staging.zip"
+
+      - name: Attach to the release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
+          generate_release_notes: true
+          draft: true
+          files: tsdec-gui.zip
