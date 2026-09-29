@@ -1,0 +1,10 @@
+# nothing built yet, but keep the usual noise out
+node_modules/
+dist/
+build/
+target/
+__pycache__/
+*.pyc
+.venv/
+venv/
+.DS_Store
