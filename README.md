@@ -41,6 +41,10 @@ One job at a time, because that is the honest scope for a first release.
 - **Survey the pids** in a recording, with how much of each is scrambled, and
   narrow the run down to the ones wanted when a transponder carries several
   services.
+- **Pick a service by name.** When the recording carries program tables, the
+  window lists the services it holds, marks each one scrambled or in the clear,
+  and fills in the pids of whichever you choose. Needs
+  [tsdec 2.5.0](https://github.com/prof-abdo/tsdec/releases/tag/v2.5.0) or later.
 - Thread count, cw blocker in bytes, and resync past corrupt packets.
 - Light and dark, following the system preference.
 - A log pane, for when a run ends oddly.
@@ -108,7 +112,7 @@ tsdec-gui.exe --self-test
 
 ## Requirements
 
-TSDEC 2.3 or later, which is where `--json` and `-S` landed. The packaged
+TSDEC 2.5 or later, which is where `--json` and `-S` landed. The packaged
 Windows build carries its own, so this only matters if you point it at a
 different decoder.
 

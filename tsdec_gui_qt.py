@@ -782,6 +782,20 @@ class MainWindow(QMainWindow):
             self.status.showMessage("failed")
         self._restyle(self.verdict)
 
+        # A resync means the control word log did not line up with the whole
+        # recording, which is worth saying out loud: the run completed, but
+        # part of it was decrypted with a key the log was out of step with, and
+        # the result is a recording with a seam in it rather than one that
+        # quietly is not right. It only shows up with resync turned on, and
+        # without it this is invisible.
+        resyncs = r.get("resyncs") or 0
+        if resyncs:
+            self.log.appendPlainText(
+                "-- the control word log was out of step with this recording "
+                "in %d place%s; the part around it may be wrong"
+                % (resyncs, "s" if resyncs != 1 else ""))
+            self.status.showMessage("done, but the log was out of step")
+
         self.log.appendPlainText("—")
         self.log.appendPlainText(self.verdict.text())
         self.log.appendPlainText(

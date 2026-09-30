@@ -4,6 +4,30 @@ All notable changes to tsdec-gui are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and this project uses
 [semantic versioning](https://semver.org/).
 
+## [0.3.0] - 2026-09-30
+
+### Added
+
+- **A service picker.** The window reads the program tables and offers what the
+  recording actually holds, by name where there is a name, with each service
+  marked scrambled or in the clear. Choosing one fills in its pids.
+
+  A transponder normally carries several services, each with its own control
+  words, so a capture of one is the ordinary case rather than a special one.
+  Until now the window made a person work out which pids belonged to which
+  service by hand. "everything in the recording" is the default rather than the
+  first service: a recording of a single service is common too, and decrypting
+  all of it is the safe reading.
+
+  Needs [tsdec
+  2.5.0](https://github.com/prof-abdo/tsdec/releases/tag/v2.5.0).
+
+- **A warning when the control word log was out of step.** A resync means part
+  of the recording was decrypted with a key the log had drifted from, so the
+  result has a seam in it. The run completes and the result is green, which is
+  exactly why it is worth saying out loud rather than leaving in the log. It
+  only appears with resync turned on, and without it the problem is invisible.
+
 ## [0.2.0] - 2026-09-30
 
 A native Windows program, which is what this should have been from the start.
@@ -76,5 +100,6 @@ First release.
 - Decoder: [prof-abdo/tsdec](https://github.com/prof-abdo/tsdec)
 - Decoder changelog: [CHANGELOG.md](https://github.com/prof-abdo/tsdec/blob/main/CHANGELOG.md)
 
+[0.3.0]: https://github.com/prof-abdo/tsdec-gui/releases/tag/v0.3.0
 [0.2.0]: https://github.com/prof-abdo/tsdec-gui/releases/tag/v0.2.0
 [0.1.0]: https://github.com/prof-abdo/tsdec-gui/releases/tag/v0.1.0
