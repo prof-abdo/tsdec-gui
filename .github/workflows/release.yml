@@ -50,13 +50,19 @@ jobs:
             make
             mingw-w64-x86_64-gcc
 
-      # ---- the decoder ----
+      # Clone and build the decoder from the normal windows shell, where git
+      # and python already are. The msys2 shell is only entered for make, so
+      # it needs nothing beyond a compiler and make.
+      - name: Fetch the decoder
+        run: git clone --depth 1 https://github.com/prof-abdo/tsdec.git _decoder
+
       - name: Build the decoder
         shell: msys2 {0}
-        run: |
-          git clone --depth 1 https://github.com/prof-abdo/tsdec.git _decoder
-          make -C _decoder
-          make -C _decoder test
+        # No test here: the decoder's own workflow already runs its suite on
+        # every platform, and repeating it in a packaging job only means
+        # debugging two toolchains instead of one. What this job has to prove
+        # is about the front end.
+        run: make -C _decoder
 
       # ---- the front end ----
       - name: Install the build tools
