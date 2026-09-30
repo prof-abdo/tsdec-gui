@@ -1,12 +1,15 @@
 name: release
 
-# Package the front end on a v* tag.
+# Build the Windows executable and attach it to a GitHub release.
 #
-# There is nothing to compile here: this is Python and three static files, so
-# the release asset is the source tree as a zip, and the only thing to get
-# wrong is picking up the wrong files. Everything the app does not need at
-# runtime is left out, and the test suite is run first so a release can never
-# ship something the tests did not pass.
+# The decoder is a dependency, so it is built here from source rather than
+# downloaded, and the packaged program is tested as an artefact before it is
+# published. That is the point of the whole job: the checks that run against
+# the Python modules all passed while the frozen build was quietly unable to
+# stop a decode, because the only thing that reproduces it is the frozen build.
+#
+# Pushing a v* tag is what starts this. workflow_dispatch rebuilds an existing
+# tag.
 
 on:
   push:
@@ -21,8 +24,9 @@ permissions:
   contents: write
 
 jobs:
-  release:
-    runs-on: ubuntu-latest
+  windows:
+    name: windows x64
+    runs-on: windows-latest
 
     steps:
       - uses: actions/checkout@v4
@@ -33,32 +37,59 @@ jobs:
 
       - uses: actions/setup-python@v5
         with:
-          python-version: '3.x'
+          python-version: '3.12'
 
-      # the decoder is the dependency, so it is downloaded and the suite runs
-      # against that exact build rather than whatever happens to be installed
-      - name: Fetch the decoder
+      - uses: msys2/setup-msys2@v2
+        with:
+          msystem: MINGW64
+          update: true
+          install: >-
+            base-devel
+            mingw-w64-x86_64-gcc
+            mingw-w64-x86_64-make
+            python
+
+      # ---- the decoder ----
+      - name: Build the decoder
+        shell: msys2 {0}
         run: |
           git clone --depth 1 https://github.com/prof-abdo/tsdec.git _decoder
           make -C _decoder
-          cp _decoder/tsdec .
+          make -C _decoder test
 
-      - name: Test
+      # ---- the front end ----
+      - name: Install the build tools
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install PySide6 pyinstaller
+
+      - name: Test the window
         env:
-          TSDEC_BIN: ${{ github.workspace }}/tsdec
+          TSDEC_BIN: ${{ github.workspace }}/_decoder/tsdec.exe
           TSDEC_SRC: ${{ github.workspace }}/_decoder
-        run: python test_gui.py
+          QT_QPA_PLATFORM: offscreen
+        run: python test_qt.py
+
+      - name: Build the executable
+        env:
+          TSDEC_BIN: ${{ github.workspace }}/_decoder/tsdec.exe
+        run: python -m PyInstaller --noconfirm --clean tsdec_gui.spec
+
+      # The decoder that gets embedded is the one just built, not whatever was
+      # on the machine, so the release and the test are the same program.
+      - name: Test the packaged executable
+        env:
+          TSDEC_SRC: ${{ github.workspace }}/_decoder
+        run: python test_exe.py
 
       - name: Package
         run: |
           set -eu
-          staging="tsdec-gui"
-          mkdir -p "$staging"
-          cp tsdec_gui.py README.md CHANGELOG.md LICENSE "$staging/"
-          cp -r web "$staging/"
-          zip -r "$staging.zip" "$staging"
-          rm -rf "$staging"
-          ls -l "$staging.zip"
+          mkdir -p dist-package
+          cp dist/tsdec-gui.exe dist-package/
+          cp README.md CHANGELOG.md LICENSE dist-package/
+          Compress-Archive -Path dist-package/* -DestinationPath tsdec-gui-windows-x86_64.zip
+          Get-Item tsdec-gui-windows-x86_64.zip | Format-List Name,Length
 
       - name: Attach to the release
         uses: softprops/action-gh-release@v2
@@ -66,4 +97,47 @@ jobs:
           tag_name: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
           generate_release_notes: true
           draft: true
-          files: tsdec-gui.zip
+          files: |
+            tsdec-gui-windows-x86_64.zip
+            dist/tsdec-gui.exe
+
+  other:
+    name: ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check out the requested tag
+        if: github.event_name == 'workflow_dispatch'
+        run: git fetch --tags && git checkout "${{ inputs.tag }}"
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Fetch and build the decoder
+        run: |
+          git clone --depth 1 https://github.com/prof-abdo/tsdec.git _decoder
+          make -C _decoder
+
+      - name: Install the build tools
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install PySide6
+
+      # There is no native build for these two yet, so what is checked here is
+      # that the code runs, and the packaging for them is left to whoever wants
+      # a linux or mac build. Running the test suite is still worth it: a
+      # mistake that only shows up on a non windows platform belongs here and
+      # nowhere else.
+      - name: Test the window
+        env:
+          TSDEC_BIN: ${{ github.workspace }}/_decoder/tsdec
+          TSDEC_SRC: ${{ github.workspace }}/_decoder
+          QT_QPA_PLATFORM: offscreen
+        run: python test_qt.py

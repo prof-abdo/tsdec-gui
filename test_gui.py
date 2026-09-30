@@ -77,11 +77,20 @@ def get(path):
 
 
 def post(path, payload):
+    """POST and return the body, whatever the status.
+
+    A 400 here is an answer, not a failure: the browser asks about a bad form
+    and the server explains why, so raising on the status would throw away the
+    message the test is actually after.
+    """
     data = json.dumps(payload).encode()
     req = urllib.request.Request(BASE + path, data=data,
                                  headers={"Content-Type": "application/json"})
-    with urllib.request.urlopen(req, timeout=60) as r:
-        return json.loads(r.read().decode())
+    try:
+        with urllib.request.urlopen(req, timeout=60) as r:
+            return json.loads(r.read().decode())
+    except urllib.error.HTTPError as e:
+        return json.loads(e.read().decode())
 
 
 def build_sample():
@@ -123,6 +132,15 @@ def main():
     httpd = tsdec_gui.Server(("127.0.0.1", PORT), handler, TSDEC)
     threading.Thread(target=httpd.serve_forever, daemon=True).start()
     time.sleep(0.3)
+
+    def wait_done(timeout=90):
+        end = time.time() + timeout
+        while time.time() < end:
+            state = get("/api/state")
+            if state["done"]:
+                return state
+            time.sleep(0.15)
+        return get("/api/state")
 
     try:
         # ---- the page and its assets are served ----
@@ -187,17 +205,13 @@ def main():
            any(p["scrambled"] > 0 for p in r.get("pids", [])))
 
         # ---- a real decryption, driven exactly as the browser does ----
+        if os.path.exists(out):
+            os.remove(out)
         r = post("/api/start", form)
         ok("starts a job", r["ok"], str(r.get("problems")))
 
-        deadline = time.time() + 90
-        while time.time() < deadline:
-            s = get("/api/state")
-            if s["done"]:
-                break
-            time.sleep(0.2)
+        s = wait_done()
         ok("job finishes", s["done"])
-
         res = s["result"] or {}
         ok("reports success", res.get("status") == 0,
            "%s / %s" % (res.get("status"), res.get("message")))
@@ -223,7 +237,21 @@ def main():
 
         # ---- the log is kept for the pane ----
         ok("keeps a log for the pane",
-           any(l.get("event") == "log" for l in s["lines"]))
+            any(l.get("event") == "log" for l in s["lines"]))
+
+        # ---- an existing output is not silently replaced ----
+        # the run above left one behind, so this is the case that matters:
+        # a stopped run leaves a partial file, and replacing it without asking
+        # would throw away exactly the work the stop button protects
+        r = post("/api/start", form)
+        ok("an existing output is refused by default",
+           not r["ok"] and r["problems"]
+           and r["problems"][0].startswith("output already exists:"),
+           str(r.get("problems")))
+        # the browser confirms and retries, which is what the ui does
+        r = post("/api/start", dict(form, overwrite=True))
+        ok("a confirmed overwrite goes through", r["ok"], str(r.get("problems")))
+        ok("and it finishes", wait_done()["done"])
 
         # ---- stop is honoured ----
         # use a big enough sample that one thread is still working

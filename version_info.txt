@@ -1,0 +1,35 @@
+# Version resource for the Windows build.
+#
+#   pyinstaller --version-file version_info.txt
+#
+# This is what makes the properties dialog show "tsdec-gui 0.2.0" instead of a
+# bare version number, and it is the only part of the build that a person
+# browsing the exe can see, so it is worth having.
+
+VSVersionInfo(
+  ffi=FixedFileInfo(
+    filevers=(0, 2, 0, 0),
+    prodvers=(0, 2, 0, 0),
+    mask=0x3f,
+    flags=0x0,
+    OS=0x40004,
+    fileType=0x1,
+    subtype=0x0,
+    date=(0, 0)
+  ),
+  kids=[
+    StringFileInfo(
+      [
+        StringTable(
+          '040904B0',
+          [StringStruct('CompanyName', 'tsdec-gui'),
+           StringStruct('FileDescription', 'tsdec-gui, a front end for the tsdec offline decrypter'),
+           StringStruct('FileVersion', '0.2.0'),
+           StringStruct('InternalName', 'tsdec-gui'),
+           StringStruct('OriginalFilename', 'tsdec-gui.exe'),
+           StringStruct('ProductName', 'tsdec-gui'),
+           StringStruct('ProductVersion', '0.2.0')])
+      ]),
+    VarFileInfo([VarStruct('Translation', [1033, 1200])])
+  ]
+)

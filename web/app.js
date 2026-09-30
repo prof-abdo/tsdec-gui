@@ -113,17 +113,36 @@ function escapeHtml(s) {
 }
 
 /* ---------- actions ---------- */
-$("start").addEventListener("click", async () => {
-  clearLog();
-  showProblems(null);
-
-  const body = collect();
-  const r = await fetch("/api/start", {
+async function startRun(body) {
+  let r = await fetch("/api/start", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
   });
-  const j = await r.json();
+  let j = await r.json();
+
+  // A file is already sitting at the output name. Ask rather than destroy it:
+  // a stopped run leaves a partial file there, and overwriting it without
+  // asking would throw away exactly the work the stop button protects.
+  if (j.problems && j.problems.length === 1 &&
+      j.problems[0].startsWith("output already exists:")) {
+    if (!confirm(j.problems[0] + "\n\nReplace it?")) return null;
+    r = await fetch("/api/start", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(Object.assign({ overwrite: true }, body)),
+    });
+    j = await r.json();
+  }
+  return j;
+}
+
+$("start").addEventListener("click", async () => {
+  clearLog();
+  showProblems(null);
+
+  const j = await startRun(collect());
+  if (j === null) return;
 
   if (!j.ok) {
     showProblems(j.problems || ["could not start"]);
