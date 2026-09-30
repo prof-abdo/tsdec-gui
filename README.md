@@ -112,9 +112,9 @@ tsdec-gui.exe --self-test
 
 ## Requirements
 
-TSDEC 2.5 or later, which is where `--json` and `-S` landed. The packaged
-Windows build carries its own, so this only matters if you point it at a
-different decoder.
+TSDEC 2.5 or later, which is where `--json`, `-S` and the program tables
+landed. The packaged Windows build carries its own, so this only matters if
+you point it at a different decoder.
 
 ## Tests
 
