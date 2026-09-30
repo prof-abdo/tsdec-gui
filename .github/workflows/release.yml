@@ -90,12 +90,13 @@ jobs:
         run: python test_exe.py
 
       - name: Package
+        shell: pwsh
         run: |
-          set -eu
-          mkdir -p dist-package
-          cp dist/tsdec-gui.exe dist-package/
-          cp README.md CHANGELOG.md LICENSE dist-package/
-          Compress-Archive -Path dist-package/* -DestinationPath tsdec-gui-windows-x86_64.zip
+          $ErrorActionPreference = 'Stop'
+          New-Item -ItemType Directory -Force -Path dist-package | Out-Null
+          Copy-Item dist/tsdec-gui.exe dist-package/
+          Copy-Item README.md, CHANGELOG.md, LICENSE dist-package/
+          Compress-Archive -Path dist-package/* -DestinationPath tsdec-gui-windows-x86_64.zip -Force
           Get-Item tsdec-gui-windows-x86_64.zip | Format-List Name,Length
 
       - name: Attach to the release
