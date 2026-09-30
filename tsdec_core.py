@@ -180,8 +180,18 @@ def validate(form, allow_overwrite=False):
     args = ["-f", cwl, "-i", ts, "-o", out, "-b", blocker]
     if threads != "0":
         args += ["-t", threads]
-    if pids:
+
+    # -n names a service rather than pids, and the decoder resolves it through
+    # the program tables. Passing both is refused rather than one winning
+    # quietly, which is the same rule the command line applies.
+    program = (form.get("program") or "").strip()
+    if pids and program:
+        problems.append("choose a service or individual pids, not both")
+    elif program:
+        args += ["-n", program]
+    elif pids:
         args += ["-p", ",".join(p.strip() for p in re.split(r"[,\s]+", pids) if p.strip())]
+
     if form.get("resync"):
         args.append("-r")
 
@@ -275,6 +285,41 @@ def _has_console():
     kill.
     """
     return os.name != "nt" or not is_frozen()
+
+
+def programs(tsdec_path, input_path):
+    """Ask the decoder what services a recording holds.
+
+    Returns (programs, error). A transponder normally carries several services
+    with their own control words, so this is what turns a capture into
+    something a person can pick a service out of, rather than a pile of
+    interleaved pids to read off a hex dump. The tables are control
+    information and are not scrambled, so this works on a recording that has
+    not been decrypted.
+    """
+    if not input_path or not os.path.isfile(input_path):
+        return None, "recording not found: %s" % input_path
+    try:
+        r = subprocess.run([tsdec_path, "-a", "-i", input_path, "--json",
+                            "-v", "0"],
+                           capture_output=True, text=True, timeout=300)
+    except OSError as e:
+        return None, str(e)
+    except subprocess.TimeoutExpired:
+        return None, "the survey took too long; the recording may be very large"
+
+    for line in reversed((r.stdout or "").splitlines()):
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            obj = json.loads(line)
+        except ValueError:
+            continue
+        if obj.get("event") == "programs":
+            return obj.get("programs") or [], None
+
+    return None, "the decoder did not report any program tables"
 
 
 class Job:

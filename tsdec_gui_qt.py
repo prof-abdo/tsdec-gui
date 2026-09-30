@@ -15,17 +15,18 @@ import time
 from PySide6.QtCore import QObject, QThread, QTimer, Qt, QUrl, Signal, Slot
 from PySide6.QtGui import QAction, QDesktopServices, QFont, QKeySequence
 from PySide6.QtWidgets import (
-    QAbstractItemView, QApplication, QCheckBox, QFileDialog, QGridLayout,
-    QGroupBox, QHBoxLayout, QHeaderView, QLabel, QLineEdit, QMainWindow,
-    QMessageBox, QPlainTextEdit, QProgressBar, QPushButton, QSpinBox,
-    QSplitter, QTableWidget, QTableWidgetItem, QToolButton, QVBoxLayout,
-    QWidget)
+    QAbstractItemView, QApplication, QCheckBox, QComboBox, QFileDialog,
+    QGridLayout, QGroupBox, QHBoxLayout, QHeaderView, QLabel, QLineEdit,
+    QMainWindow, QMessageBox, QPlainTextEdit, QProgressBar, QPushButton,
+    QSpinBox, QSplitter, QTableWidget, QTableWidgetItem, QToolButton,
+    QVBoxLayout, QWidget)
 
 import tsdec_core
-from tsdec_core import Manager, find_tsdec, human_size, survey, validate
+from tsdec_core import (Manager, find_tsdec, human_size, programs, survey,
+                        validate)
 
 APP_NAME = "tsdec-gui"
-APP_VERSION = "0.2.0"
+APP_VERSION = "0.3.0"
 
 # what a stop reports, so the window can say it without knowing the codes
 RET_CANCELED = tsdec_core.RET_CANCELED
@@ -68,13 +69,15 @@ def _only_problem_is_existing_output(problems):
 
 
 class SurveyWorker(QObject):
-    """Runs a pid survey off the main thread.
+    """Reads a recording off the main thread: what pids it holds, and what
+    services it carries.
 
-    A survey reads the whole recording, which on a large one is long enough
-    that doing it inline would freeze the window and look like a hang.
+    Both come out of the same pass, and both read the whole file, which on a
+    large recording is long enough that doing it inline would freeze the window
+    and look like a hang.
     """
 
-    finished = Signal(object, object)          # rows, error
+    finished = Signal(object, object, object)     # pid rows, programs, error
 
     def __init__(self, tsdec, path):
         super().__init__()
@@ -84,7 +87,14 @@ class SurveyWorker(QObject):
     @Slot()
     def run(self):
         rows, err = survey(self.tsdec, self.path)
-        self.finished.emit(rows, err)
+        progs = []
+        if rows is not None:
+            progs, perr = programs(self.tsdec, self.path)
+            if progs is None:
+                # the tables are optional: a capture of a single elementary
+                # stream has none, and that is not a failure
+                progs = []
+        self.finished.emit(rows, progs, err)
 
 
 class MainWindow(QMainWindow):
@@ -98,6 +108,7 @@ class MainWindow(QMainWindow):
         self.log_index = 0          # how far the log has been drained
         self.picked = set()         # pids the run is limited to
         self.survey_rows = []
+        self.program_rows = []      # the services the recording carries
         self.survey_thread = None
         self.survey_worker = None
         self.dark = False
@@ -205,6 +216,15 @@ class MainWindow(QMainWindow):
         self.blocker_spin.setValue(300)
         self.blocker_spin.setToolTip("Parity blocks tolerated before a resync")
         opts.addWidget(self._labelled("Parity blocker", self.blocker_spin))
+
+        # a transponder carries several services, each with its own control
+        # words, so a recording of one is the ordinary case. Choosing the
+        # service by name beats reading its pids off a hex dump.
+        self.program_combo = QComboBox()
+        self.program_combo.setToolTip(
+            "Which service in the recording to decrypt")
+        self.program_combo.currentIndexChanged.connect(self._program_changed)
+        opts.addWidget(self._labelled("Service", self.program_combo))
 
         self.pids_edit = QLineEdit()
         self.pids_edit.setPlaceholderText("0x100, 0x101")
@@ -542,17 +562,97 @@ class MainWindow(QMainWindow):
         self.survey_thread.finished.connect(self._survey_cleanup)
         self.survey_thread.start()
 
-    @Slot(object, object)
-    def _survey_done(self, rows, err):
+    @Slot(object, object, object)
+    def _survey_done(self, rows, progs, err):
         if err:
             self._show_problems([err])
             return
         self.survey_rows = rows or []
+        self.program_rows = progs or []
         self._fill_pid_table()
+        self._fill_programs()
         self._show_problems([])
         scrambled = sum(1 for r in self.survey_rows if r["scrambled"] > 0)
-        self.status.showMessage("%d pids, %d scrambled"
-                                % (len(self.survey_rows), scrambled))
+        self.status.showMessage(
+            "%d pids, %d scrambled%s"
+            % (len(self.survey_rows), scrambled,
+               ", %d service%s" % (len(self.program_rows), "s"
+                                    if len(self.program_rows) != 1 else "")
+               if self.program_rows else ""))
+
+    def _fill_programs(self):
+        """Offer the services the recording carries.
+
+        A transponder normally carries several, each with its own control
+        words, so this is what stops the run being a guess. "everything" is the
+        default rather than the first service: a recording of one service is
+        common too, and decrypting all of it is the safe reading.
+
+        Whether a service is encrypted is worked out here from the pid survey,
+        because it is a property of the packets rather than of the tables, and
+        the survey has already counted them.
+        """
+        def scrambled_of(pid):
+            # the survey reports pids as hex strings and the program tables as
+            # numbers, so they have to meet somewhere before they can be
+            # compared
+            want = "0x%04x" % pid if isinstance(pid, int) else str(pid)
+            for r in self.survey_rows:
+                if str(r.get("pid")).lower() == want.lower():
+                    return r.get("scrambled", 0) > 0
+            return False
+
+        current = self.program_combo.currentData()
+        self.program_combo.blockSignals(True)
+        self.program_combo.clear()
+        self.program_combo.addItem("everything in the recording", "")
+        self.program_combo.setEnabled(True)
+
+        for p in self.program_rows:
+            streams = p.get("streams") or []
+            any_scr = any(scrambled_of(s.get("pid")) for s in streams)
+            label = p.get("name") or "program %s" % p.get("program")
+            label += "  (scrambled)" if any_scr else "  (in the clear)"
+            self.program_combo.addItem(label, str(p.get("program")))
+
+        idx = self.program_combo.findData(current)
+        self.program_combo.setCurrentIndex(idx if idx >= 0 else 0)
+        self.program_combo.blockSignals(False)
+
+        if self.program_rows:
+            self.program_combo.setToolTip(
+                "%d service%s in this recording. Pick one to limit the run to it."
+                % (len(self.program_rows),
+                   "s" if len(self.program_rows) != 1 else ""))
+        else:
+            self.program_combo.setToolTip(
+                "This recording carries no program tables, so it holds a bare "
+                "elementary stream. Everything will be decrypted.")
+
+    def _program_changed(self):
+        """Choosing a service fills in its pids, so -n and -p stay in step.
+
+        The pids go in as text rather than being carried separately, because
+        that is what the field means and it keeps one code path for the
+        arguments. -n is left to the decoder to resolve: the pids are shown so
+        a person can see what is being worked on, not used to build the command.
+        """
+        pid = self.program_combo.currentData()
+        if not pid:
+            self.pids_edit.clear()
+            return
+
+        pids = []
+        for p in self.program_rows:
+            if str(p.get("program")) != str(pid):
+                continue
+            for s in p.get("streams") or []:
+                pids.append(s.get("pid"))
+        if pids:
+            self.pids_edit.setText(",".join("0x%x" % x for x in pids))
+            self.pids_edit.setToolTip(
+                "Filled in from the service you picked. Clear it, or choose "
+                "everything, to work on the pids yourself.")
 
     def _survey_cleanup(self):
         self.survey_thread.deleteLater()
@@ -700,7 +800,7 @@ class MainWindow(QMainWindow):
         self.stop_button.setEnabled(running)
         for w in (self.input_edit, self.cwl_edit, self.output_edit,
                   self.threads_spin, self.blocker_spin, self.pids_edit,
-                  self.resync_check):
+                  self.resync_check, self.program_combo):
             w.setEnabled(not running)
         if not running:
             self.progress_group.setTitle("Result")
